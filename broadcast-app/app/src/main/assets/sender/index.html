@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sender Dashboard</title>
+    <script src="qrcode.min.js"></script>
     <style>
         :root {
             --bg: #0f172a;
@@ -65,6 +66,28 @@
         .info-label { color: var(--text-muted); }
         .info-value { font-weight: 600; text-align: right; word-break: break-all; }
         
+        .qr-section {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 10px;
+        }
+        .qr-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            background: #fff;
+            padding: 12px;
+            border-radius: 12px;
+        }
+        .qr-label {
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
         .broadcast-section {
             display: flex; flex-direction: column; gap: 12px;
         }
@@ -105,9 +128,16 @@
             <span class="info-label">Receivers</span>
             <span class="info-value" id="valClients">0</span>
         </div>
-        <div class="info-row" style="flex-direction: column; gap: 8px;">
-            <span class="info-label">IP Addresses</span>
-            <span class="info-value" id="valIps" style="text-align: left; font-family: monospace; font-size: 14px; color: var(--primary);"></span>
+        
+        <div class="qr-section">
+            <div class="qr-box">
+                <span class="qr-label">1. Join Wi-Fi</span>
+                <div id="qrWifi"></div>
+            </div>
+            <div class="qr-box" id="qrUrlBox" style="display: none;">
+                <span class="qr-label">2. Open Link</span>
+                <div id="qrUrl"></div>
+            </div>
         </div>
     </div>
 
@@ -120,6 +150,9 @@
     <script>
         // UI Helpers
         const $ = id => document.getElementById(id);
+        
+        let wifiQrObj = null;
+        let urlQrObj = null;
         
         // Native -> Web
         window.updateStatus = (status) => {
@@ -148,8 +181,26 @@
             $("valSsid").textContent = ssid;
             $("valPass").textContent = pass;
             
-            // Format IPs
-            $("valIps").innerHTML = ips.map(ip => "http://" + ip + ":8080").join("<br>");
+            // Generate Wi-Fi QR
+            const wifiString = `WIFI:T:WPA;S:${ssid};P:${pass};;`;
+            if (wifiQrObj) {
+                wifiQrObj.makeCode(wifiString);
+            } else {
+                wifiQrObj = new QRCode($("qrWifi"), { text: wifiString, width: 128, height: 128 });
+            }
+            
+            // Generate URL QR (Pick the first valid IP)
+            if (ips && ips.length > 0) {
+                $("qrUrlBox").style.display = "flex";
+                const urlString = `http://${ips[0]}:8080/`;
+                if (urlQrObj) {
+                    urlQrObj.makeCode(urlString);
+                } else {
+                    urlQrObj = new QRCode($("qrUrl"), { text: urlString, width: 128, height: 128 });
+                }
+            } else {
+                $("qrUrlBox").style.display = "none";
+            }
             
             $("broadcastCard").style.opacity = "1";
             $("broadcastCard").style.pointerEvents = "auto";
