@@ -123,8 +123,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateWebUIEvent(jsonStr: String) {
-        val escaped = jsonStr.replace("\"", "\\\"").replace("'", "\\'")
-        webView.evaluateJavascript("if(window.onReceiveEvent) window.onReceiveEvent(\\\"$escaped\\\");", null)
+        val base64 = android.util.Base64.encodeToString(jsonStr.toByteArray(), android.util.Base64.NO_WRAP)
+        webView.evaluateJavascript("if(window.onReceiveEvent) window.onReceiveEvent(decodeURIComponent(escape(window.atob('" + base64 + "'))));", null)
     }
 
     override fun onDestroy() {
