@@ -37,7 +37,25 @@
         input:focus { outline: 2px solid var(--primary); }
         .poll-section { opacity: 0.5; pointer-events: none; }
         .poll-fields { display: none; margin-top: 15px; flex-direction: column; gap: 10px; }
-    </style>
+    
+        .messages { display: flex; flex-direction: column; gap: 12px; margin-top: 15px; }
+        .msg-bubble { background: var(--surface); padding: 16px; border-radius: 12px; font-size: 16px; border-left: 4px solid var(--primary); animation: slideIn 0.3s ease-out; }
+        .msg-time { font-size: 12px; color: var(--text-muted); margin-top: 8px; text-align: right; }
+        .poll-card { border-left: 4px solid #f59e0b; }
+        .poll-q { font-weight: bold; margin-bottom: 12px; font-size: 18px; }
+        .poll-opt {
+            background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); 
+            padding: 12px; border-radius: 8px; margin-bottom: 8px;
+            position: relative; overflow: hidden;
+        }
+        .poll-bar {
+            position: absolute; left: 0; top: 0; bottom: 0;
+            background: rgba(59,130,246,0.3); width: 0%;
+            transition: width 0.5s ease; z-index: 0;
+        }
+        .poll-text { position: relative; z-index: 1; display: flex; justify-content: space-between; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
 </head>
 <body>
     <div>
@@ -76,8 +94,91 @@
         </div>
     </div>
 
+    
+    <div class="card" id="feedCard" style="display: none;">
+        <h3 style="font-size: 16px; color: var(--text-muted); margin-bottom: 10px;">Live Audience Feed</h3>
+        <div class="messages" id="msgs"></div>
+    </div>
+
     <script>
         const $ = id => document.getElementById(id);
+
+        const activePolls = {};
+        window.onReceiveEvent = (jsonStr) => {
+            try {
+                const data = JSON.parse(jsonStr);
+                appendItem(data);
+            } catch(e) {}
+        };
+        
+        function appendItem(data) {
+            const msgs = document.getElementById("msgs");
+            if (!msgs) return false;
+            
+            if (data.type === "poll_update") {
+                updatePoll(data.id, data.votes);
+                return false;
+            }
+            if (document.getElementById(data.id)) return false;
+            
+            const div = document.createElement("div");
+            div.className = "msg-bubble " + (data.type === "poll" ? "poll-card" : "");
+            div.id = data.id;
+            
+            if (data.type === "message") {
+                const txt = document.createElement("div"); txt.textContent = data.text;
+                div.appendChild(txt);
+            } else if (data.type === "poll") {
+                const q = document.createElement("div"); q.className = "poll-q"; q.textContent = "📊 " + data.question;
+                div.appendChild(q);
+                
+                activePolls[data.id] = [];
+                let totalVotes = data.votes.reduce((a, b) => a + b, 0);
+                
+                data.options.forEach((optStr, idx) => {
+                    const optDiv = document.createElement("div");
+                    optDiv.className = "poll-opt";
+                    
+                    const bar = document.createElement("div");
+                    bar.className = "poll-bar";
+                    const pct = totalVotes > 0 ? Math.round((data.votes[idx] / totalVotes) * 100) : 0;
+                    bar.style.width = pct + "%";
+                    
+                    const textWrap = document.createElement("div");
+                    textWrap.className = "poll-text";
+                    const spanL = document.createElement("span"); spanL.textContent = optStr;
+                    const spanR = document.createElement("span"); spanR.textContent = pct + "%";
+                    textWrap.appendChild(spanL); textWrap.appendChild(spanR);
+                    
+                    optDiv.appendChild(bar);
+                    optDiv.appendChild(textWrap);
+                    
+                    activePolls[data.id].push({ bar, spanR });
+                    div.appendChild(optDiv);
+                });
+            }
+            
+            const time = document.createElement("div"); time.className = "msg-time";
+            time.textContent = new Date(data.ts).toLocaleTimeString();
+            div.appendChild(time);
+            
+            msgs.prepend(div);
+            return true;
+        }
+        
+        function updatePoll(id, votes) {
+            const p = activePolls[id];
+            if (!p) return;
+            const total = votes.reduce((a, b) => a + b, 0);
+            if (total === 0) return;
+            
+            votes.forEach((v, idx) => {
+                const pct = Math.round((v / total) * 100);
+                p[idx].bar.style.width = pct + "%";
+                p[idx].spanR.textContent = pct + "%";
+            });
+        }
+
         let wifiQrObj = null, urlQrObj = null;
         
         window.updateStatus = (status) => $("statusText").textContent = status;
@@ -95,6 +196,7 @@
             $("startBtn").style.display = "none";
             $("stopBtn").style.display = "block";
             $("networkCard").style.display = "block";
+            $("feedCard").style.display = "block";
             $("valSsid").textContent = ssid;
             $("valPass").textContent = pass;
             
@@ -121,6 +223,8 @@
             $("startBtn").style.display = "block";
             $("stopBtn").style.display = "none";
             $("networkCard").style.display = "none";
+            $("feedCard").style.display = "none";
+            $("msgs").innerHTML = "";
             $("valClients").textContent = "0";
             $("broadcastCard").style.opacity = "0.5";
             $("broadcastCard").style.pointerEvents = "none";

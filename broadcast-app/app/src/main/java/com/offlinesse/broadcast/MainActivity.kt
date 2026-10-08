@@ -78,9 +78,11 @@ class MainActivity : AppCompatActivity() {
         updateWebUIStatus("Starting hotspot...")
         hotspotManager.start(object : HotspotManager.Listener {
             override fun onHotspotStarted(ssid: String, password: String, ips: List<String>) {
-                val server = BroadcastServer(this@MainActivity, 8080) { count ->
+                val server = BroadcastServer(this@MainActivity, 8080, { count ->
                     mainHandler.post { updateWebUIClients(count) }
-                }
+                }, { jsonStr ->
+                    mainHandler.post { updateWebUIEvent(jsonStr) }
+                })
                 broadcastServer = server
                 server.start()
                 
@@ -118,6 +120,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateWebUIClients(count: Int) {
         webView.evaluateJavascript("if(window.updateClientCount) window.updateClientCount($count);", null)
+    }
+
+    private fun updateWebUIEvent(jsonStr: String) {
+        val escaped = jsonStr.replace("\"", "\\\"").replace("'", "\\'")
+        webView.evaluateJavascript("if(window.onReceiveEvent) window.onReceiveEvent(\\\"$escaped\\\");", null)
     }
 
     override fun onDestroy() {

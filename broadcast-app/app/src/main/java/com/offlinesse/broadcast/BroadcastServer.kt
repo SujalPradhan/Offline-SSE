@@ -12,7 +12,8 @@ import java.util.concurrent.Executors
 class BroadcastServer(
     private val context: Context,
     private val port: Int = 8080,
-    private val onClientCountChange: (Int) -> Unit
+    private val onClientCountChange: (Int) -> Unit,
+    private val onNewEvent: (String) -> Unit = {}
 ) {
     private var serverSocket: ServerSocket? = null
     private val sseClients = CopyOnWriteArrayList<OutputStream>()
@@ -189,8 +190,10 @@ class BroadcastServer(
     }
     
     private fun broadcastRawJson(jsonObj: JSONObject) {
+        val eventDataStr = jsonObj.toString()
+        onNewEvent(eventDataStr)
         executor.execute {
-            val eventString = "data: ${jsonObj}\n\n"
+            val eventString = "data: ${eventDataStr}\n\n"
             val dead = mutableListOf<OutputStream>()
             for (client in sseClients) {
                 try {
