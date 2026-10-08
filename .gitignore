@@ -1,0 +1,32 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+spike-s1/local.properties
+broadcast-app/local.properties
+
+# Gradle caches
+.gradle/
+spike-s1/.gradle/
+broadcast-app/.gradle/
+
+# Build folders
+build/
+spike-s1/app/build/
+broadcast-app/app/build/
+
+# IDE files
+.idea/
+spike-s1/.idea/
+broadcast-app/.idea/

@@ -57,8 +57,6 @@ class MainActivity : AppCompatActivity() {
         updateUI("Idle", "", "", "", 0)
     }
 
-    // ── Permissions ──────────────────────────────────────────────────────────
-
     private fun requestPermissionsAndStart() {
         val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES)
@@ -88,8 +86,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ── Hotspot ───────────────────────────────────────────────────────────────
-
     private fun startHotspot() {
         updateUI("Starting hotspot...", "", "", "", 0)
         val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
@@ -101,14 +97,12 @@ class MainActivity : AppCompatActivity() {
                 val ssid = config?.SSID?.replace("\"", "") ?: "Unknown"
                 val password = config?.preSharedKey?.replace("\"", "") ?: "Unknown"
 
-                // Start HTTP server after hotspot is up
                 val server = SpikeHttpServer(8080) { count ->
                     mainHandler.post { clientsText.text = "Connected receivers: $count" }
                 }
                 httpServer = server
                 executor.execute { server.start() }
 
-                // Give server a moment to bind, then get IP
                 mainHandler.postDelayed({
                     val ip = getHotspotIp()
                     updateUI("✅ Hotspot active", ssid, password, ip, 0)
@@ -139,28 +133,24 @@ class MainActivity : AppCompatActivity() {
         httpServer?.broadcastMessage("Hello from Sender at ${System.currentTimeMillis()}")
     }
 
-    // ── Network helpers ───────────────────────────────────────────────────────
-
     private fun getHotspotIp(): String {
         return try {
-            NetworkInterface.getNetworkInterfaces().toList()
-                .filter { it.name.contains("wlan") || it.name.contains("ap") }
+            val ips = java.net.NetworkInterface.getNetworkInterfaces().toList()
                 .flatMap { it.inetAddresses.toList() }
                 .filter { !it.isLoopbackAddress && it is java.net.Inet4Address }
                 .map { it.hostAddress ?: "" }
-                .firstOrNull() ?: "IP not found"
+            
+            if (ips.isEmpty()) "IP not found" else ips.joinToString("\n") { "http://$it:8080" }
         } catch (e: Exception) {
             "Error getting IP: ${e.message}"
         }
     }
 
-    // ── UI ────────────────────────────────────────────────────────────────────
-
     private fun updateUI(status: String, ssid: String, password: String, ip: String, clients: Int) {
         statusText.text = "Status: $status"
         ssidText.text = if (ssid.isNotEmpty()) "SSID: $ssid" else "SSID: —"
         passwordText.text = if (password.isNotEmpty()) "Password: $password" else "Password: —"
-        ipText.text = if (ip.isNotEmpty()) "URL: http://$ip:8080" else "URL: —"
+        ipText.text = if (ip.isNotEmpty()) "URLs:\n$ip" else "URLs: —"
         clientsText.text = "Connected receivers: $clients"
         stopButton.isEnabled = hotspotReservation != null
         broadcastButton.isEnabled = hotspotReservation != null
@@ -172,8 +162,6 @@ class MainActivity : AppCompatActivity() {
         executor.shutdownNow()
     }
 }
-
-// ── Minimal HTTP + SSE Server ─────────────────────────────────────────────────
 
 class SpikeHttpServer(
     private val port: Int,
@@ -200,7 +188,14 @@ class SpikeHttpServer(
     private fun handleClient(socket: Socket) {
         try {
             val input = socket.getInputStream().bufferedReader()
-            val requestLine = input.readLine() ?: return
+            var line = input.readLine()
+            val requestLine = line ?: return
+            
+            // Consume HTTP headers so browser doesn't reset connection
+            while (line != null && line.isNotBlank()) {
+                line = input.readLine()
+            }
+
             val path = requestLine.split(" ").getOrNull(1) ?: "/"
 
             when {
@@ -220,18 +215,18 @@ class SpikeHttpServer(
             <head><title>SSE Spike S1</title></head>
             <body style="font-family:sans-serif;padding:20px;background:#111;color:#fff">
               <h1>SSE Spike S1 — Receiver</h1>
-              <p id="status">Connecting to event stream...</p>
+              <p id="status" style="color:yellow">Connecting to event stream...</p>
               <div id="messages"></div>
               <script>
                 const es = new EventSource('/events');
-                es.onopen = () => document.getElementById('status').textContent = '✅ Connected to SSE stream';
+                es.onopen = () => document.getElementById('status').innerHTML = '<span style="color:lime">✅ Connected to SSE stream</span>';
                 es.onmessage = (e) => {
                   const div = document.createElement('div');
                   div.style = 'background:#1e1e1e;padding:12px;margin:8px 0;border-radius:6px;font-size:18px';
                   div.textContent = e.data;
                   document.getElementById('messages').prepend(div);
                 };
-                es.onerror = () => document.getElementById('status').textContent = '❌ SSE connection lost';
+                es.onerror = () => document.getElementById('status').innerHTML = '<span style="color:red">❌ SSE connection lost</span>';
               </script>
             </body>
             </html>
@@ -251,13 +246,11 @@ class SpikeHttpServer(
         sseClients.add(out)
         onClientCountChange(sseClients.size)
 
-        // Send a welcome ping
         try {
             out.write(": ping\n\n".toByteArray())
             out.flush()
         } catch (_: Exception) {}
 
-        // Keep connection alive — will be closed when client disconnects or server stops
         try {
             while (running && !socket.isClosed) {
                 Thread.sleep(5000)
@@ -273,18 +266,23 @@ class SpikeHttpServer(
     }
 
     fun broadcastMessage(text: String) {
-        val event = "data: $text\n\n"
-        val dead = mutableListOf<OutputStream>()
-        for (client in sseClients) {
-            try {
-                client.write(event.toByteArray())
-                client.flush()
-            } catch (_: Exception) {
-                dead.add(client)
+        // MUST run in background thread to avoid NetworkOnMainThreadException
+        executor.execute {
+            val event = "data: $text\n\n"
+            val dead = mutableListOf<OutputStream>()
+            for (client in sseClients) {
+                try {
+                    client.write(event.toByteArray())
+                    client.flush()
+                } catch (e: Exception) {
+                    dead.add(client)
+                }
+            }
+            if (dead.isNotEmpty()) {
+                sseClients.removeAll(dead)
+                onClientCountChange(sseClients.size)
             }
         }
-        sseClients.removeAll(dead)
-        onClientCountChange(sseClients.size)
     }
 
     private fun send404(socket: Socket) {
