@@ -1,13 +1,192 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Sender UI</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sender Dashboard</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; background: #111; color: #fff; }
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --primary: #3b82f6;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+            --error: #ef4444;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+        
+        .card {
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            background: rgba(255,255,255,0.1);
+        }
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%; background: #ccc;
+        }
+        
+        .btn {
+            display: flex; justify-content: center; align-items: center;
+            width: 100%; padding: 14px; border-radius: 12px;
+            font-size: 16px; font-weight: 600; border: none; cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-danger { background: var(--surface); color: var(--error); border: 1px solid var(--error); }
+        
+        .info-row {
+            display: flex; justify-content: space-between; padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: var(--text-muted); }
+        .info-value { font-weight: 600; text-align: right; word-break: break-all; }
+        
+        .broadcast-section {
+            display: flex; flex-direction: column; gap: 12px;
+        }
+        input[type="text"] {
+            width: 100%; padding: 14px; border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.2); color: white;
+            font-size: 16px;
+        }
+        input:focus { outline: 2px solid var(--primary); }
     </style>
 </head>
 <body>
-    <h1>Offline Broadcast</h1>
-    <p>This is the Sender UI loaded inside the WebView.</p>
+
+    <div>
+        <h1>Broadcast Hub</h1>
+        <div class="status-badge" id="statusBadge">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Idle</span>
+        </div>
+    </div>
+
+    <div class="card" id="controlsCard">
+        <button class="btn btn-primary" id="startBtn" onclick="start()">Start Hotspot & Server</button>
+        <button class="btn btn-danger" id="stopBtn" onclick="stop()" style="display: none; margin-top: 10px;">Stop</button>
+    </div>
+
+    <div class="card" id="networkCard" style="display: none;">
+        <div class="info-row">
+            <span class="info-label">SSID</span>
+            <span class="info-value" id="valSsid">-</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Password</span>
+            <span class="info-value" id="valPass">-</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Receivers</span>
+            <span class="info-value" id="valClients">0</span>
+        </div>
+        <div class="info-row" style="flex-direction: column; gap: 8px;">
+            <span class="info-label">IP Addresses</span>
+            <span class="info-value" id="valIps" style="text-align: left; font-family: monospace; font-size: 14px; color: var(--primary);"></span>
+        </div>
+    </div>
+
+    <div class="card broadcast-section" id="broadcastCard" style="opacity: 0.5; pointer-events: none;">
+        <h3 style="font-size: 16px; color: var(--text-muted);">Send Message</h3>
+        <input type="text" id="msgInput" placeholder="Type a message..." />
+        <button class="btn btn-primary" onclick="sendMsg()">Broadcast</button>
+    </div>
+
+    <script>
+        // UI Helpers
+        const $ = id => document.getElementById(id);
+        
+        // Native -> Web
+        window.updateStatus = (status) => {
+            $("statusText").textContent = status;
+        };
+        
+        window.showError = (err) => {
+            $("statusText").textContent = "Error: " + err;
+            $("statusDot").style.background = "var(--error)";
+            $("startBtn").style.display = "block";
+            $("stopBtn").style.display = "none";
+        };
+
+        window.updateClientCount = (count) => {
+            $("valClients").textContent = count;
+        };
+
+        window.onHotspotActive = (ssid, pass, ips) => {
+            $("statusText").textContent = "Active & Broadcasting";
+            $("statusDot").style.background = "var(--success)";
+            
+            $("startBtn").style.display = "none";
+            $("stopBtn").style.display = "block";
+            
+            $("networkCard").style.display = "block";
+            $("valSsid").textContent = ssid;
+            $("valPass").textContent = pass;
+            
+            // Format IPs
+            $("valIps").innerHTML = ips.map(ip => "http://" + ip + ":8080").join("<br>");
+            
+            $("broadcastCard").style.opacity = "1";
+            $("broadcastCard").style.pointerEvents = "auto";
+        };
+
+        window.onHotspotStopped = () => {
+            $("statusText").textContent = "Idle";
+            $("statusDot").style.background = "#ccc";
+            
+            $("startBtn").style.display = "block";
+            $("stopBtn").style.display = "none";
+            
+            $("networkCard").style.display = "none";
+            $("valClients").textContent = "0";
+            
+            $("broadcastCard").style.opacity = "0.5";
+            $("broadcastCard").style.pointerEvents = "none";
+        };
+
+        // Web -> Native
+        function start() {
+            $("statusText").textContent = "Requesting permissions...";
+            if(window.AndroidBridge) window.AndroidBridge.startHotspot();
+        }
+
+        function stop() {
+            if(window.AndroidBridge) window.AndroidBridge.stopHotspot();
+        }
+
+        function sendMsg() {
+            const input = $("msgInput");
+            if(!input.value.trim()) return;
+            if(window.AndroidBridge) {
+                window.AndroidBridge.broadcast(input.value);
+                input.value = "";
+            }
+        }
+    </script>
 </body>
 </html>
