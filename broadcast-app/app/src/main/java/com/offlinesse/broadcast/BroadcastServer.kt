@@ -19,6 +19,8 @@ class BroadcastServer(
     private val executor = Executors.newCachedThreadPool()
     private val history = CopyOnWriteArrayList<JSONObject>()
     @Volatile private var running = false
+    
+    private var currentPoll: JSONObject? = null
 
     fun start() {
         running = true
@@ -62,6 +64,11 @@ class BroadcastServer(
                     input.read(body, 0, contentLength)
                     handlePostMessage(socket, String(body))
                 }
+                method == "POST" && path == "/vote" -> {
+                    val body = CharArray(contentLength)
+                    input.read(body, 0, contentLength)
+                    handleVote(socket, String(body))
+                }
                 else -> sendResponse(socket, 404, "Not Found", "text/plain", "Not Found")
             }
         } catch (e: Exception) {
@@ -94,6 +101,35 @@ class BroadcastServer(
             } else {
                 sendResponse(socket, 400, "Bad Request", "application/json", "{\"error\":\"empty text\"}")
             }
+        } catch (e: Exception) {
+            sendResponse(socket, 400, "Bad Request", "application/json", "{\"error\":\"invalid json\"}")
+        }
+    }
+
+    private fun handleVote(socket: Socket, body: String) {
+        try {
+            val json = JSONObject(body)
+            val pollId = json.optString("pollId", "")
+            val optionIdx = json.optInt("optionIndex", -1)
+            
+            val poll = currentPoll
+            if (poll != null && poll.optString("id") == pollId && optionIdx >= 0) {
+                val votesArray = poll.getJSONArray("votes")
+                if (optionIdx < votesArray.length()) {
+                    val currentCount = votesArray.getInt(optionIdx)
+                    votesArray.put(optionIdx, currentCount + 1)
+                    
+                    val updateObj = JSONObject().apply {
+                        put("type", "poll_update")
+                        put("id", pollId)
+                        put("votes", votesArray)
+                    }
+                    broadcastRawJson(updateObj)
+                    sendResponse(socket, 200, "OK", "application/json", "{\"status\":\"ok\"}")
+                    return
+                }
+            }
+            sendResponse(socket, 400, "Bad Request", "application/json", "{\"error\":\"invalid vote\"}")
         } catch (e: Exception) {
             sendResponse(socket, 400, "Bad Request", "application/json", "{\"error\":\"invalid json\"}")
         }
@@ -151,19 +187,10 @@ class BroadcastServer(
             try { socket.close() } catch (_: Exception) {}
         }
     }
-
-    fun broadcastMessage(text: String) {
-        val msgId = "msg-${System.currentTimeMillis()}"
-        val msgObj = JSONObject().apply {
-            put("id", msgId)
-            put("text", text)
-            put("ts", System.currentTimeMillis())
-        }
-        history.add(msgObj)
-
+    
+    private fun broadcastRawJson(jsonObj: JSONObject) {
         executor.execute {
-            val eventData = msgObj.toString()
-            val eventString = "data: $eventData\n\n"
+            val eventString = "data: ${jsonObj}\n\n"
             val dead = mutableListOf<OutputStream>()
             for (client in sseClients) {
                 try {
@@ -178,6 +205,39 @@ class BroadcastServer(
                 onClientCountChange(sseClients.size)
             }
         }
+    }
+
+    fun broadcastMessage(text: String) {
+        val msgId = "msg-${System.currentTimeMillis()}"
+        val msgObj = JSONObject().apply {
+            put("type", "message")
+            put("id", msgId)
+            put("text", text)
+            put("ts", System.currentTimeMillis())
+        }
+        history.add(msgObj)
+        broadcastRawJson(msgObj)
+    }
+    
+    fun startPoll(question: String, options: List<String>) {
+        val pollId = "poll-${System.currentTimeMillis()}"
+        val optArray = JSONArray(options)
+        val voteArray = JSONArray()
+        for (i in options.indices) {
+            voteArray.put(0)
+        }
+        
+        val pollObj = JSONObject().apply {
+            put("type", "poll")
+            put("id", pollId)
+            put("ts", System.currentTimeMillis())
+            put("question", question)
+            put("options", optArray)
+            put("votes", voteArray)
+        }
+        currentPoll = pollObj
+        history.add(pollObj)
+        broadcastRawJson(pollObj)
     }
 
     fun stop() {

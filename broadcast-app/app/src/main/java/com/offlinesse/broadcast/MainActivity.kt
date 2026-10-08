@@ -35,7 +35,8 @@ class MainActivity : AppCompatActivity() {
         val bridge = WebAppBridge(
             onStartHotspot = { mainHandler.post { requestPermissionsAndStart() } },
             onStopHotspot = { mainHandler.post { stopServices() } },
-            onBroadcast = { msg -> mainHandler.post { broadcastServer?.broadcastMessage(msg) } }
+            onBroadcast = { msg -> mainHandler.post { broadcastServer?.broadcastMessage(msg) } },
+            onStartPoll = { q, opts -> mainHandler.post { broadcastServer?.startPoll(q, opts) } }
         )
         webView.addJavascriptInterface(bridge, "AndroidBridge")
 

@@ -6,60 +6,46 @@
     <title>Receiver</title>
     <style>
         :root {
-            --bg: #0f172a;
-            --surface: #1e293b;
-            --primary: #3b82f6;
-            --text: #f8fafc;
-            --text-muted: #94a3b8;
+            --bg: #0f172a; --surface: #1e293b; --primary: #3b82f6; 
+            --text: #f8fafc; --text-muted: #94a3b8;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
+            background: var(--bg); color: var(--text); padding: 24px;
+            display: flex; flex-direction: column; gap: 20px;
         }
-        
         .header { text-align: center; margin-bottom: 10px; }
-        .controls {
-            display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 12px;
-        }
-        .status { 
-            display: inline-block; padding: 6px 12px; border-radius: 20px;
-            font-size: 14px; background: rgba(255,255,255,0.1); 
-        }
+        .controls { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 12px; }
+        .status { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 14px; background: rgba(255,255,255,0.1); }
         .status.connected { color: #10b981; }
         .status.error { color: #ef4444; }
         
-        .tts-btn {
-            background: var(--surface); color: var(--text); 
-            border: 1px solid rgba(255,255,255,0.2);
-            padding: 6px 12px; border-radius: 20px; font-size: 14px; cursor: pointer;
-            transition: all 0.2s;
-        }
-        .tts-btn.enabled {
-            background: var(--primary); border-color: var(--primary);
-        }
+        .tts-btn { background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 20px; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+        .tts-btn.enabled { background: var(--primary); border-color: var(--primary); }
         
         .messages { display: flex; flex-direction: column; gap: 12px; }
-        .msg-bubble {
-            background: var(--surface); padding: 16px;
-            border-radius: 12px; font-size: 16px;
-            border-left: 4px solid var(--primary);
-            animation: slideIn 0.3s ease-out;
-        }
-        .msg-time {
-            font-size: 12px; color: var(--text-muted);
-            margin-top: 8px; text-align: right;
-        }
+        .msg-bubble { background: var(--surface); padding: 16px; border-radius: 12px; font-size: 16px; border-left: 4px solid var(--primary); animation: slideIn 0.3s ease-out; }
+        .msg-time { font-size: 12px; color: var(--text-muted); margin-top: 8px; text-align: right; }
         
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
+        /* Poll Styles */
+        .poll-card { border-left: 4px solid #f59e0b; }
+        .poll-q { font-weight: bold; margin-bottom: 12px; font-size: 18px; }
+        .poll-opt {
+            background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); 
+            padding: 12px; border-radius: 8px; margin-bottom: 8px;
+            cursor: pointer; position: relative; overflow: hidden;
+            transition: background 0.2s;
         }
+        .poll-opt:hover { background: rgba(255,255,255,0.05); }
+        .poll-bar {
+            position: absolute; left: 0; top: 0; bottom: 0;
+            background: rgba(59,130,246,0.3); width: 0%;
+            transition: width 0.5s ease; z-index: 0;
+        }
+        .poll-text { position: relative; z-index: 1; display: flex; justify-content: space-between; }
+        
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
@@ -79,88 +65,119 @@
         const ttsBtn = document.getElementById("ttsBtn");
         
         let ttsEnabled = false;
-
         ttsBtn.addEventListener("click", () => {
             if (!ttsEnabled) {
-                // Unlock browser audio engine with a silent utterance
-                const u = new SpeechSynthesisUtterance("");
-                window.speechSynthesis.speak(u);
-                
-                ttsEnabled = true;
-                ttsBtn.textContent = "🔊 Audio Enabled";
-                ttsBtn.classList.add("enabled");
+                window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+                ttsEnabled = true; ttsBtn.textContent = "🔊 Audio Enabled"; ttsBtn.classList.add("enabled");
             } else {
-                ttsEnabled = false;
-                ttsBtn.textContent = "🔇 Audio Muted";
-                ttsBtn.classList.remove("enabled");
+                ttsEnabled = false; ttsBtn.textContent = "🔇 Audio Muted"; ttsBtn.classList.remove("enabled");
                 window.speechSynthesis.cancel();
             }
         });
 
         function speakMsg(text) {
             if (!ttsEnabled) return;
-            const utterance = new SpeechSynthesisUtterance(text);
-            window.speechSynthesis.speak(utterance);
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
         }
         
-        // Fetch history first
-        fetch("/history")
-            .then(res => res.json())
-            .then(data => {
-                data.forEach(item => appendMsg(item));
-                connectSse();
-            })
-            .catch(err => {
-                console.error("Failed to load history", err);
-                connectSse();
-            });
+        fetch("/history").then(res => res.json()).then(data => {
+            data.forEach(item => appendItem(item));
+            connectSse();
+        }).catch(err => { console.error(err); connectSse(); });
 
         function connectSse() {
             const es = new EventSource("/events");
-            
-            es.onopen = () => {
-                status.textContent = "✅ Connected";
-                status.className = "status connected";
-            };
-            
+            es.onopen = () => { status.textContent = "✅ Connected"; status.className = "status connected"; };
             es.onmessage = (e) => {
                 try {
                     const data = JSON.parse(e.data);
-                    const isNew = appendMsg(data);
-                    if (isNew) {
-                        speakMsg(data.text);
-                    }
-                } catch(err) {
-                    console.error("Invalid msg", e.data);
-                }
+                    const isNew = appendItem(data);
+                    if (isNew && data.type === "message") speakMsg(data.text);
+                    if (isNew && data.type === "poll") speakMsg("New poll: " + data.question);
+                } catch(err) { console.error("Invalid msg", e.data); }
             };
-            
-            es.onerror = () => {
-                status.textContent = "❌ Connection Lost";
-                status.className = "status error";
-            };
+            es.onerror = () => { status.textContent = "❌ Connection Lost"; status.className = "status error"; };
         }
 
-        function appendMsg(data) {
-            // Check if exists
+        // Global map to track poll DOM elements so we can update bars
+        const activePolls = {};
+
+        function appendItem(data) {
+            if (data.type === "poll_update") {
+                updatePoll(data.id, data.votes);
+                return false;
+            }
             if (document.getElementById(data.id)) return false;
             
             const div = document.createElement("div");
-            div.className = "msg-bubble";
+            div.className = "msg-bubble " + (data.type === "poll" ? "poll-card" : "");
             div.id = data.id;
             
-            const txt = document.createElement("div");
-            txt.textContent = data.text;
+            if (data.type === "message") {
+                const txt = document.createElement("div"); txt.textContent = data.text;
+                div.appendChild(txt);
+            } else if (data.type === "poll") {
+                const q = document.createElement("div"); q.className = "poll-q"; q.textContent = "📊 " + data.question;
+                div.appendChild(q);
+                
+                activePolls[data.id] = [];
+                let voted = false; // local state
+                
+                let totalVotes = data.votes.reduce((a, b) => a + b, 0);
+                
+                data.options.forEach((optStr, idx) => {
+                    const optDiv = document.createElement("div");
+                    optDiv.className = "poll-opt";
+                    
+                    const bar = document.createElement("div");
+                    bar.className = "poll-bar";
+                    const pct = totalVotes > 0 ? Math.round((data.votes[idx] / totalVotes) * 100) : 0;
+                    bar.style.width = pct + "%";
+                    
+                    const textWrap = document.createElement("div");
+                    textWrap.className = "poll-text";
+                    const spanL = document.createElement("span"); spanL.textContent = optStr;
+                    const spanR = document.createElement("span"); spanR.textContent = pct + "%";
+                    textWrap.appendChild(spanL); textWrap.appendChild(spanR);
+                    
+                    optDiv.appendChild(bar);
+                    optDiv.appendChild(textWrap);
+                    
+                    optDiv.onclick = () => {
+                        if (voted) return;
+                        voted = true;
+                        fetch("/vote", {
+                            method: "POST",
+                            body: JSON.stringify({ pollId: data.id, optionIndex: idx })
+                        });
+                        // Visual feedback
+                        optDiv.style.border = "1px solid var(--primary)";
+                    };
+                    
+                    activePolls[data.id].push({ bar, spanR });
+                    div.appendChild(optDiv);
+                });
+            }
             
-            const time = document.createElement("div");
-            time.className = "msg-time";
+            const time = document.createElement("div"); time.className = "msg-time";
             time.textContent = new Date(data.ts).toLocaleTimeString();
-            
-            div.appendChild(txt);
             div.appendChild(time);
             
             msgs.prepend(div);
             return true;
+        }
+        
+        function updatePoll(id, votes) {
+            const p = activePolls[id];
+            if (!p) return;
+            const total = votes.reduce((a, b) => a + b, 0);
+            if (total === 0) return;
+            
+            votes.forEach((v, idx) => {
+                const pct = Math.round((v / total) * 100);
+                p[idx].bar.style.width = pct + "%";
+                p[idx].spanR.textContent = pct + "%";
+            });
         }
     </script>
 </body>
