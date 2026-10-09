@@ -2,6 +2,43 @@
 
 This application operates as a **zero-infrastructure, decentralized broadcast hub** running entirely on a single Android device.
 
+## System Topology
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                          SENDER DEVICE (Android)                       │
+│                                                                        │
+│  ┌────────────────────────┐      ┌──────────────────────────────────┐  │
+│  │   Sender Dashboard     │      │     BroadcastServer (Kotlin)     │  │
+│  │  (WebView / HTML+JS)   │      │        (ServerSocket)            │  │
+│  │                        │      │                                  │  │
+│  │ [ 📝 Type Message ]────┼─JS──▶│  [ broadcastMessage()  ]         │  │
+│  │ [ 📊 Create Poll  ]────┼─JS──▶│  [ startPoll()         ]         │  │
+│  │                        │      │                                  │  │
+│  │                        ◀─JS───┼─ [ updateWebUIEvent()  ]         │  │
+│  │ (Live feed renders)    │      │                                  │  │
+│  └────────────────────────┘      │  GET  /        → receiver.html   │  │
+│                                  │  GET  /events  → SSE Stream      │  │
+│        (Javascript Bridge)       │  GET  /history → JSON Data       │  │
+│                                  │  POST /vote    → JSON Tally      │  │
+│                                  └─────────────────┬────────────────┘  │
+│                                                    │                   │
+│             HotspotManager (offline Wi-Fi AP, no internet)             │
+└────────────────────────────────────────────────────┼───────────────────┘
+                                                     │  HTTP over Local Wi-Fi
+               ┌─────────────────────────────────────┼─────────────────────────────────────┐
+               │                                     │                                     │
+      ┌────────▼────────┐                   ┌────────▼────────┐                   ┌────────▼────────┐
+      │   Receiver 1    │                   │   Receiver 2    │                   │   Receiver N    │
+      │                 │                   │                 │                   │                 │
+      │   Browser       │                   │   Browser       │                   │   Browser       │
+      │  (Chrome, Safari│                   │  (Chrome, Safari│                   │  (Chrome, Safari│
+      │                 │                   │                 │                   │                 │
+      │   SSE listener  │                   │   SSE listener  │                   │   SSE listener  │
+      │   POST /vote    │                   │   POST /vote    │                   │   POST /vote    │
+      └─────────────────┘                   └─────────────────┘                   └─────────────────┘
+```
+
 ## Core Components
 
 1.  **HotspotManager (Kotlin)**
